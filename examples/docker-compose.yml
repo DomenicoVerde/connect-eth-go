@@ -1,0 +1,75 @@
+services:
+  proxy:
+    build: proxy
+    container_name: eth-proxy
+    hostname: proxy
+    init: true
+    environment:
+      - PROXY_ADDR=${PROXY_NET_IPV4}${PROXY_NET_IPV6} # QUIC / HTTP3 proxy address
+      - PROXY_PORT=443                                # QUIC / HTTP3 proxy port
+      - GATEWAY_IPV4=${GATEWAY_IPV4}                  # Proxy IPv4 address over server subnet (not needed)
+      - GATEWAY_IPV6=${GATEWAY_IPV6}                  # Proxy IPv6 address over server subnet (not needed)
+      - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true
+      - QUIC_GO_DISABLE_GSO=true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    expose:
+      - "443/udp"
+    networks:
+      clientnet:
+        ipv4_address: ${PROXY_NET_IPV4}
+        ipv6_address: ${PROXY_NET_IPV6}
+      servernet:
+        ipv4_address: ${GATEWAY_IPV4}
+        ipv6_address: ${GATEWAY_IPV6}
+  client:
+    build: client
+    container_name: eth-client
+    hostname: client
+    environment:
+      - TESTCASE=${TESTCASE}
+      - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true
+      - QUIC_GO_DISABLE_GSO=true
+      - PROXY_ADDR=${PROXY_NET_IPV4}${PROXY_NET_IPV6}
+      - PROXY_PORT=443
+      - SERVER_ADDR=${SERVER_NET_IPV4}${SERVER_NET_IPV6}
+    networks:
+      clientnet:
+        ipv4_address: ${CLIENT_NET_IPV4}
+        ipv6_address: ${CLIENT_NET_IPV6}
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+  server:
+    build: server
+    container_name: eth-server
+    hostname: server
+    init: true
+    networks:
+      servernet:
+        ipv4_address: ${SERVER_NET_IPV4}
+        ipv6_address: ${SERVER_NET_IPV6}
+    cap_add:
+      - NET_ADMIN
+
+networks:
+  clientnet:
+    driver: bridge
+    enable_ipv6: true
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: 'false'
+    ipam:
+      config:
+        - subnet: 194.166.0.0/24
+        - subnet: 2001:db8:1::/64
+  servernet:
+    driver: bridge
+    enable_ipv6: true
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: 'false'
+    ipam:
+      config:
+        - subnet: 194.166.100.0/24
+        - subnet: 2001:db8:2::/64
