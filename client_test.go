@@ -14,12 +14,22 @@ import (
 )
 
 func TestClientInvalidTemplate(t *testing.T) {
-	_, _, err := Dial(
-		context.Background(),
-		nil,
-		uritemplate.MustNew("https://example.org/.well-known/masque/ethernet/{vlan_id}/"),
-	)
-	require.ErrorContains(t, err, "connect-ethernet: VLANs not supported")
+	t.Run("vlan", func(t *testing.T) {
+		_, _, err := Dial(
+			context.Background(),
+			nil,
+			uritemplate.MustNew("https://example.org/.well-known/masque/ethernet/{vlan_id}/"),
+		)
+		require.ErrorContains(t, err, "connect-ethernet: VLANs not supported")
+	})
+	t.Run("uri", func(t *testing.T) {
+		_, _, err := Dial(
+			context.Background(),
+			nil,
+			uritemplate.MustNew("https://[::1"),
+		)
+		require.ErrorContains(t, err, "connect-ethernet: failed to parse URI:")
+	})
 }
 
 func TestClientWaitForSettings(t *testing.T) {

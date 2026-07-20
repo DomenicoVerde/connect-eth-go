@@ -34,6 +34,13 @@ func TestConnectEthernetRequestParsing(t *testing.T) {
 		require.EqualError(t, err, "connect-ethernet currently does not support template variables")
 	})
 
+	t.Run("bad url internal server error", func(t *testing.T) {
+		template := uritemplate.MustNew("https://[::1")
+		req := newRequest("https://localhost:1234/.well-known/masque/ethernet/")
+		_, err := ParseRequest(req, template)
+		require.Equal(t, http.StatusInternalServerError, err.(*RequestParseError).HTTPStatus)
+	})
+
 	template := uritemplate.MustNew("https://localhost:1234/.well-known/masque/ethernet/")
 
 	t.Run("wrong protocol", func(t *testing.T) {
@@ -42,6 +49,13 @@ func TestConnectEthernetRequestParsing(t *testing.T) {
 		_, err := ParseRequest(req, template)
 		require.EqualError(t, err, "unexpected protocol: not-connect-ethernet")
 		require.Equal(t, http.StatusNotImplemented, err.(*RequestParseError).HTTPStatus)
+	})
+
+	t.Run("wrong url path", func(t *testing.T) {
+		req := newRequest("https://localhost:1234/.well-known/masque/not-ethernet/")
+		_, err := ParseRequest(req, template)
+		require.EqualError(t, err, "path (/.well-known/masque/not-ethernet/) does not match template path (/.well-known/masque/ethernet/)")
+		require.Equal(t, http.StatusBadRequest, err.(*RequestParseError).HTTPStatus)
 	})
 
 	t.Run("wrong request method", func(t *testing.T) {
