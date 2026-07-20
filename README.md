@@ -1,4 +1,5 @@
 # Proxying Ethernet over HTTP 
+[![Go Reference](https://pkg.go.dev/badge/github.com/DomenicoVerde/connect-eth-go.svg)](https://pkg.go.dev/github.com/DomenicoVerde/connect-eth-go)
 [![codecov](https://codecov.io/github/DomenicoVerde/connect-eth-go/graph/badge.svg?token=GHO1XP3K14)](https://codecov.io/github/DomenicoVerde/connect-eth-go)
 
 [*connect-eth-go*](https://github.com/DomenicoVerde/connect-eth-go) is an implementation of the [draft-ietf-masque-connect-ethernet](https://datatracker.ietf.org/doc/draft-ietf-masque-connect-ethernet/), 
