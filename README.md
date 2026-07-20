@@ -1,4 +1,5 @@
 # Proxying Ethernet over HTTP 
+[![codecov](https://codecov.io/github/DomenicoVerde/connect-eth-go/graph/badge.svg?token=GHO1XP3K14)](https://codecov.io/github/DomenicoVerde/connect-eth-go)
 
 [*connect-eth-go*](https://github.com/DomenicoVerde/connect-eth-go) is an implementation of the [draft-ietf-masque-connect-ethernet](https://datatracker.ietf.org/doc/draft-ietf-masque-connect-ethernet/), 
 allowing the proxying of Ethernet packets via QUIC and HTTP/3. It is actually update to version 10 of the draft.
