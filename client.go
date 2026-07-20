@@ -14,7 +14,7 @@ import (
 // Dial starts a connection to a target Ethernet proxy (Sec. 4.4, 8)
 func Dial(ctx context.Context, conn *http3.ClientConn, template *uritemplate.Template) (*Conn, *http.Response, error) {
 	if len(template.Varnames()) > 0 {
-		return nil, nil, errors.New("connect-ethernet: IP flow forwarding not supported")
+		return nil, nil, errors.New("connect-ethernet: VLANs not supported")
 	}
 
 	u, err := url.Parse(template.Raw())

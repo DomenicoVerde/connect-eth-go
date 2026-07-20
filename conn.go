@@ -33,23 +33,51 @@ var (
 	_ http3Stream = &http3.RequestStream{}
 )
 
-// Conn is a connection used to proxy Ethernet frames over HTTP/3.
+// Conn is a connection structure used to proxy Ethernet frames over HTTP/3.
 type Conn struct {
 	str http3Stream
-
-	mu sync.Mutex
+	mu  sync.Mutex
 
 	closeChan chan struct{}
 	closeErr  error
 }
 
+// newProxiedConn creates a new proxied connection structure, handling read/writes from the HTTP/3 stream.
 func newProxiedConn(str http3Stream) *Conn {
 	c := &Conn{
 		str:       str,
 		closeChan: make(chan struct{}),
 	}
-
+	go func() {
+		if err := c.readFromStream(); err != nil {
+			log.Printf("reading from stream failed: %v", err)
+			c.mu.Lock()
+			if c.closeErr == nil {
+				c.closeErr = &CloseError{Remote: true}
+				close(c.closeChan)
+			}
+			c.mu.Unlock()
+		}
+	}()
+	// In future version a c.WriteToSream() may be needed
 	return c
+}
+
+// readFromStream reads HTTP/3 capsules from streams. Actually is used to track if the connection is closed or active.
+func (c *Conn) readFromStream() error {
+	defer c.str.Close()
+	r := quicvarint.NewReader(c.str)
+	for {
+		t, _, err := http3.ParseCapsule(r)
+		if err != nil {
+			return err
+		}
+		switch t {
+		// Maybe in future versions new capsules will be defined
+		default:
+			log.Printf("unknown capsule type: %d", t)
+		}
+	}
 }
 
 // ReadPacket reads an Ethernet frame over the HTTP/3 connection.
@@ -143,7 +171,7 @@ func (c *Conn) Close() error {
 	return err
 }
 
-// isEthernet checks if data is a valid ethernet frame or not
+// isEthernet checks whether data is a valid Ethernet frame or not
 func isEthernet(data []byte) bool {
 	// header Ethernet >= 14 bytes (src/dst mac - 6 bytes, type - 2 bytes)
 	if len(data) < 14 {

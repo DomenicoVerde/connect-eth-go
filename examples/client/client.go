@@ -139,19 +139,31 @@ func establishConn(proxyAddr netip.AddrPort, keyLog io.Writer) (*water.Interface
 		return nil, nil, fmt.Errorf("failed to set TAP mtu")
 	}
 
-	addr, err := netlink.ParseAddr("194.166.100.10/24")
+	addr, err := netlink.ParseAddr("198.51.100.10/24")
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("failed to parse the IPv4 address: %w", err)
 	}
 
 	err = netlink.AddrAdd(link, addr)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("failed to add Ipv4 address to TAP interface: %w", err)
+	}
+
+	addrv6, err := netlink.ParseAddr("2001:db8:2::10/64")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse the IPv6 address: %w", err)
+	}
+
+	err = netlink.AddrAdd(link, addrv6)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to add Ipv6 address to TAP interface: %w", err)
 	}
 
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, nil, fmt.Errorf("failed to bring up TAP interface: %w", err)
 	}
+
+	time.Sleep(1 * time.Second)
 
 	return dev, ethconn, nil
 }

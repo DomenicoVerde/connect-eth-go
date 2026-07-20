@@ -62,7 +62,7 @@ networks:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
     ipam:
       config:
-        - subnet: 194.166.0.0/24
+        - subnet: 192.0.2.0/24
         - subnet: 2001:db8:1::/64
   servernet:
     driver: bridge
@@ -71,5 +71,5 @@ networks:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
     ipam:
       config:
-        - subnet: 194.166.100.0/24
+        - subnet: 198.51.100.0/24
         - subnet: 2001:db8:2::/64

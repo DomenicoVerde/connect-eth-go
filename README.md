@@ -4,7 +4,8 @@
 allowing the proxying of Ethernet packets via QUIC and HTTP/3. It is actually update to version 10 of the draft.
 
 The project is entirely based on [quic-go](https://github.com/quic-go/quic-go), and provides both a client and 
-a proxy implementation. A dockerized client, proxy, and server are provided under the [examples](examples) directory.
+a proxy implementation. Dockerized versions of client, proxy, and server are provided
+under the [examples](examples) directory.
 
 At this point, it supports the following use cases:
 * Remote Access L2 VPN, see 
@@ -12,7 +13,8 @@ At this point, it supports the following use cases:
 * Site-to-Site L2 VPN, see
 [Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-10.html#section-8.2)
 
-It still does not support vlan-identifiers. Check captures under the [pcaps](pcaps) directory to 
+It still does not support vlan-identifiers (VLANs are supported but unmanaged by the proxy).
+Check captures under the [pcaps](pcaps) directory to
 verify compliance with the draft.
 
 ## License

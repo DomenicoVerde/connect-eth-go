@@ -6,8 +6,6 @@ proxy:
 	GOOS=linux go build $(if $(RACE),-race) -o proxy/proxy ./proxy
 
 endpoints:
-	openssl req -new -x509 -newkey Ed25519 -keyout server/key.pem -out server/cert.pem -days 365 -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=server" -nodes
-	GOOS=linux go build $(if $(RACE),-race) -o server/server ./server
 	GOOS=linux go build $(if $(RACE),-race) -o client/client ./client
 
 docker-build:
@@ -16,9 +14,7 @@ docker-build:
 
 cleanup:
 	rm client/client || true
-	rm server/server || true
 	rm proxy/proxy || true
-	rm server/key.pem server/cert.pem || true
 	rm proxy/key.pem proxy/cert.pem || true
 
 clean-containers:

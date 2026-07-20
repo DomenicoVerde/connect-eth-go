@@ -42,7 +42,7 @@ func (e *RequestParseError) Unwrap() error { return e.Err }
 func ParseRequest(r *http.Request, template *uritemplate.Template) (*Request, error) {
 	if len(template.Varnames()) > 0 {
 		// TO-DO: support VLAN identifiers
-		return nil, errors.New("connect-eth currently does not support template variables")
+		return nil, errors.New("connect-ethernet currently does not support template variables")
 	}
 
 	u, err := url.Parse(template.Raw())
@@ -62,6 +62,12 @@ func ParseRequest(r *http.Request, template *uritemplate.Template) (*Request, er
 		return nil, &RequestParseError{
 			HTTPStatus: http.StatusNotImplemented,
 			Err:        fmt.Errorf("unexpected protocol: %s", r.Proto),
+		}
+	}
+	if r.URL.Path != u.Path {
+		return nil, &RequestParseError{
+			HTTPStatus: http.StatusBadRequest,
+			Err:        fmt.Errorf("path (%s) does not match template path (%s)", r.URL.Path, u.Path),
 		}
 	}
 	if r.Host != u.Host {
