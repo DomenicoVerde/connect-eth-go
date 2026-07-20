@@ -21,6 +21,11 @@ verify compliance with the draft.
 
 Distributed under the MIT License — see [LICENSE](LICENSE).
 
+## Acknowledgements
+
+This project is based in part on [connect-ip-go](https://github.com/quic-go/connect-ip-go) and [masque-go](https://github.com/quic-go/connect-ip-go), both licensed under the MIT License by [Marten Seeman](https://github.com/marten-seemann).
+The original source code has been modified and adapted for this project.
+
 ## Contributing
 
 Bug reports and pull requests are welcome.
