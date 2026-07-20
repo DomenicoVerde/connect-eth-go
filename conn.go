@@ -68,15 +68,11 @@ func (c *Conn) readFromStream() error {
 	defer c.str.Close()
 	r := quicvarint.NewReader(c.str)
 	for {
-		t, _, err := http3.ParseCapsule(r)
+		_, _, err := http3.ParseCapsule(r)
 		if err != nil {
 			return err
 		}
-		switch t {
-		// Maybe in future versions new capsules will be defined
-		default:
-			log.Printf("unknown capsule type: %d", t)
-		}
+		// Maybe in future versions of the draft new capsules will be defined and parsed here.
 	}
 }
 
