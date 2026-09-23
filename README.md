@@ -7,7 +7,7 @@
 
 [*connect-eth-go*](https://github.com/DomenicoVerde/connect-eth-go) is an implementation of the 
 [draft-ietf-masque-connect-ethernet](https://datatracker.ietf.org/doc/draft-ietf-masque-connect-ethernet/), 
-allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is actually updated to version 10 of the draft.
+allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is actually updated to version 14 of the draft.
 
 The project is entirely based on [quic-go](https://github.com/quic-go/quic-go), and provides both a client and 
 a proxy implementation. Dockerized versions of client, proxy, and server are provided
@@ -19,7 +19,8 @@ At this point, it supports the following use cases:
 * Site-to-Site L2 VPN, see
 [Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-10.html#section-8.2)
 
-It still does not support VLAN identifiers (VLANs are supported but not managed by the proxy).
+It still does not support VLAN identifiers (VLANs are supported but not managed by the proxy). 
+It is also recommended to enable the Spanning Tree Protocol (STP) on the bridged Ethernet segments.
 Check captures under the [pcaps](pcaps) directory to verify compliance with the draft.
 
 ## License
