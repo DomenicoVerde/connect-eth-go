@@ -7,21 +7,35 @@
 
 [*connect-eth-go*](https://github.com/DomenicoVerde/connect-eth-go) is an implementation of the 
 [draft-ietf-masque-connect-ethernet](https://datatracker.ietf.org/doc/draft-ietf-masque-connect-ethernet/), 
-allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is actually updated to version 14 of the draft.
+allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is currently updated to version 14 of the draft.
 
 The project is entirely based on [quic-go](https://github.com/quic-go/quic-go), and provides both a client and 
 a proxy implementation. Dockerized versions of client, proxy, and server are provided
 under the [examples](examples) directory.
 
+![Architecture of connect-eth-go, with multiple clients bridged by the proxy on the same Ethernet LAN](docs/architecture.svg)
+
 At this point, it supports the following use cases:
 * Remote Access L2 VPN, see 
-[Section 8.1](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-10.html#section-8.1)
+[Section 8.1](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-14.html#section-8.1)
 * Site-to-Site L2 VPN, see
-[Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-10.html#section-8.2)
+[Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-14.html#section-8.2)
 
 It still does not support VLAN identifiers (VLANs are supported but not managed by the proxy). 
 It is also recommended to enable the Spanning Tree Protocol (STP) on the bridged Ethernet segments.
 Check captures under the [pcaps](pcaps) directory to verify compliance with the draft.
+
+### Deviations from the draft
+
+The draft requires the proxied Ethernet frame to include the Frame Check Sequence (FCS).
+This implementation proxies frames **without the FCS**, as they are provided by TAP devices and raw sockets:
+the FCS is computed and checked by the network interface card, and it is dropped before frames reach the OS.
+
+### Decrypting packet captures
+
+[pcaps/keys.txt](pcaps/keys.txt) contains the TLS secrets of the QUIC connection captured in [pcaps](pcaps),
+logged by the example client. To decrypt the captures in Wireshark, set it in
+*Preferences → Protocols → TLS → (Pre)-Master-Secret log filename*.
 
 ## License
 
@@ -29,8 +43,8 @@ Distributed under the MIT License — see [LICENSE](LICENSE).
 
 ## Acknowledgements
 
-This project is based in part on [connect-ip-go](https://github.com/quic-go/connect-ip-go) and [masque-go](https://github.com/quic-go/connect-ip-go),
-both licensed under the MIT License by [Marten Seeman](https://github.com/marten-seemann).
+This project is based in part on [connect-ip-go](https://github.com/quic-go/connect-ip-go) and [masque-go](https://github.com/quic-go/masque-go),
+both licensed under the MIT License by [Marten Seemann](https://github.com/marten-seemann).
 The original source code has been modified and adapted for this project.
 
 ## Contributing
