@@ -54,12 +54,7 @@ func newProxiedConn(str http3Stream) *Conn {
 	go func() {
 		if err := c.readFromStream(); err != nil {
 			log.Printf("reading from stream failed: %v", err)
-			c.mu.Lock()
-			if c.closeErr == nil {
-				c.closeErr = &CloseError{Remote: true}
-				close(c.closeChan)
-			}
-			c.mu.Unlock()
+			c.setClosed(&CloseError{Remote: true})
 		}
 	}()
 	// In future versions a c.writeToStream() may be needed
@@ -90,12 +85,9 @@ func (c *Conn) ReadPacket(b []byte) (n int, err error) {
 start:
 	data, err := c.str.ReceiveDatagram(context.Background())
 	if err != nil {
-		select {
-		case <-c.closeChan:
-			return 0, c.closeErr
-		default:
-			return 0, err
-		}
+		// ReceiveDatagram only fails once the stream is gone. Mark the connection as closed here,
+		// without racing with readFromStream to notice it.
+		return 0, c.setClosed(&CloseError{Remote: true})
 	}
 	contextID, n, err := quicvarint.Parse(data)
 	if err != nil {
@@ -170,14 +162,20 @@ func (c *Conn) composeDatagram(b []byte) ([]byte, error) {
 	return data, nil
 }
 
-// Close closes the connection, aborting the underlying HTTP/3 request stream.
-func (c *Conn) Close() error {
+// setClosed marks the connection as closed, unless it was already, and returns the close error.
+func (c *Conn) setClosed(err error) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.closeErr == nil {
-		c.closeErr = &CloseError{Remote: false}
+		c.closeErr = err
 		close(c.closeChan)
 	}
-	c.mu.Unlock()
+	return c.closeErr
+}
+
+// Close closes the connection, aborting the underlying HTTP/3 request stream.
+func (c *Conn) Close() error {
+	c.setClosed(&CloseError{Remote: false})
 	c.str.CancelRead(quic.StreamErrorCode(http3.ErrCodeNoError))
 	err := c.str.Close()
 	return err
