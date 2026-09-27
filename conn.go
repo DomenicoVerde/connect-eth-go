@@ -14,7 +14,10 @@ import (
 	"github.com/quic-go/quic-go/quicvarint"
 )
 
+// CloseError is returned by ReadPacket and WritePacket once the connection is closed.
+// It matches net.ErrClosed when checked with errors.Is.
 type CloseError struct {
+	// Remote is true if the connection was closed by the peer, false if it was closed locally by calling Close.
 	Remote bool
 }
 
@@ -59,24 +62,30 @@ func newProxiedConn(str http3Stream) *Conn {
 			c.mu.Unlock()
 		}
 	}()
-	// In future version a c.WriteToSream() may be needed
+	// In future versions a c.writeToStream() may be needed
 	return c
 }
 
-// readFromStream reads HTTP/3 capsules from streams. Actually is used to track if the connection is closed or active.
+// readFromStream reads HTTP/3 capsules from the stream, and is used to track whether the connection is closed.
+// The draft doesn't define any capsule, so all capsules are unknown and silently skipped (RFC 9297, Sec. 3.2).
 func (c *Conn) readFromStream() error {
 	defer c.str.Close()
 	r := quicvarint.NewReader(c.str)
 	for {
-		_, _, err := http3.ParseCapsule(r)
+		_, cr, err := http3.ParseCapsule(r)
 		if err != nil {
 			return err
 		}
-		// Maybe in future versions of the draft new capsules will be defined and parsed here.
+		// The payload must be consumed, otherwise it would be parsed as the next capsule.
+		if _, err := io.Copy(io.Discard, cr); err != nil {
+			return err
+		}
 	}
 }
 
 // ReadPacket reads an Ethernet frame over the HTTP/3 connection.
+// Malformed datagrams and datagrams with an unknown Context ID are silently dropped.
+// If b is too small to hold the frame, the frame is dropped and io.ErrShortBuffer is returned.
 func (c *Conn) ReadPacket(b []byte) (n int, err error) {
 start:
 	data, err := c.str.ReceiveDatagram(context.Background())
@@ -90,7 +99,8 @@ start:
 	}
 	contextID, n, err := quicvarint.Parse(data)
 	if err != nil {
-		return 0, fmt.Errorf("connect-ethernet: malformed datagram: %w", err)
+		log.Printf("dropping malformed datagram: %s", err)
+		goto start
 	}
 	if contextID != 0 {
 		// Drop this datagram. We only support proxying of Ethernet payloads with Context ID set to 0 (Sec. 5)
@@ -100,18 +110,21 @@ start:
 		log.Printf("dropping proxied packet: %s", err)
 		goto start
 	}
+	if len(b) < len(data[n:]) {
+		return 0, fmt.Errorf("connect-ethernet: frame (%d bytes) too large for buffer (%d bytes): %w", len(data[n:]), len(b), io.ErrShortBuffer)
+	}
 	return copy(b, data[n:]), nil
 }
 
 func (c *Conn) handleIncomingProxiedPacket(data []byte) error {
 	// We don't necessarily assign any addresses to the peer, since it is L2 proxying.
 	// In addition, in the Remote Access VPN use case (Section 8.1),
-	// the client accepts incoming traffic from all IPs, thus it has no sense to save the ip in the conn.
+	// the client accepts incoming traffic from all IPs, thus it makes no sense to save the IP in the conn.
 
 	// The destination IP address is always valid, since the proxy acts as a L2 bridge. ARP resolution and other stuff
-	// is leaved to the OS.
+	// is left to the OS.
 
-	// We check only that the frame has a correct ethertype. Other checks may be needed in the future.
+	// We check only that the frame is long enough to contain an Ethernet header.
 	if !isEthernet(data) {
 		return errors.New("connect-ethernet: not an Ethernet packet")
 	}
@@ -120,18 +133,20 @@ func (c *Conn) handleIncomingProxiedPacket(data []byte) error {
 }
 
 // WritePacket encapsulates and sends an Ethernet frame over the HTTP/3 connection.
+// Frames that can't be proxied (too short, or too large to fit in a datagram) are dropped (Sec. 7),
+// and no error is returned. An error is returned only if the connection can't be used anymore.
 func (c *Conn) WritePacket(b []byte) (err error) {
 	data, err := c.composeDatagram(b)
 	if err != nil {
 		log.Printf("dropping proxied packet (%d bytes) that can't be proxied: %s", len(b), err)
-		return err
+		return nil
 	}
 
 	if err := c.str.SendDatagram(data); err != nil {
 		var errDTL *quic.DatagramTooLargeError
 		if errors.As(err, &errDTL) {
 			log.Printf("dropping proxied packet: datagram too large (%d bytes)", len(data))
-			return err
+			return nil
 		}
 		select {
 		case <-c.closeChan:
@@ -155,6 +170,7 @@ func (c *Conn) composeDatagram(b []byte) ([]byte, error) {
 	return data, nil
 }
 
+// Close closes the connection, aborting the underlying HTTP/3 request stream.
 func (c *Conn) Close() error {
 	c.mu.Lock()
 	if c.closeErr == nil {
@@ -167,13 +183,10 @@ func (c *Conn) Close() error {
 	return err
 }
 
-// isEthernet checks whether data is a valid Ethernet frame or not
+// isEthernet checks whether data is long enough to be an Ethernet frame.
+// The EtherType/Length field is not checked: values below 0x0600 are 802.3 length fields
+// (e.g. LLC frames such as STP BPDUs), and must be proxied as well.
 func isEthernet(data []byte) bool {
-	// header Ethernet >= 14 bytes (src/dst mac - 6 bytes, type - 2 bytes)
-	if len(data) < 14 {
-		return false
-	}
-
-	etherType := uint16(data[12])<<8 | uint16(data[13])
-	return etherType >= 0x0600
+	// header Ethernet >= 14 bytes (dst/src mac - 6 bytes each, EtherType/Length - 2 bytes)
+	return len(data) >= 14
 }
