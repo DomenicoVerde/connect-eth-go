@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -114,4 +115,17 @@ func TestClosing(t *testing.T) {
 
 	err = server.WritePacket(validFrameEthernetIpv6)
 	require.ErrorIs(t, err, net.ErrClosed)
+}
+
+func TestProxyNotHTTP3(t *testing.T) {
+	// httptest.ResponseRecorder doesn't implement http3.HTTPStreamer, like HTTP/1.1 and HTTP/2 response writers.
+	rec := httptest.NewRecorder()
+	p := &Proxy{}
+	_, err := p.Proxy(rec, &Request{})
+	require.ErrorContains(t, err, "connect-ethernet: response writer is not an HTTP/3 stream")
+
+	// No response must have been sent, so that the caller can still respond with an error.
+	require.Empty(t, rec.Header().Get(http3.CapsuleProtocolHeader))
+	rec.WriteHeader(http.StatusNotImplemented)
+	require.Equal(t, http.StatusNotImplemented, rec.Code)
 }

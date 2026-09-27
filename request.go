@@ -42,7 +42,10 @@ func (e *RequestParseError) Unwrap() error { return e.Err }
 func ParseRequest(r *http.Request, template *uritemplate.Template) (*Request, error) {
 	if len(template.Varnames()) > 0 {
 		// TO-DO: support VLAN identifiers
-		return nil, errors.New("connect-ethernet currently does not support template variables")
+		return nil, &RequestParseError{
+			HTTPStatus: http.StatusNotImplemented,
+			Err:        errors.New("connect-ethernet currently does not support template variables"),
+		}
 	}
 
 	u, err := url.Parse(template.Raw())

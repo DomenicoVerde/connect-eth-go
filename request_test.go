@@ -32,6 +32,7 @@ func TestConnectEthernetRequestParsing(t *testing.T) {
 		req := newRequest("https://localhost:1234/.well-known/masque/ethernet/32/")
 		_, err := ParseRequest(req, template)
 		require.EqualError(t, err, "connect-ethernet currently does not support template variables")
+		require.Equal(t, http.StatusNotImplemented, err.(*RequestParseError).HTTPStatus)
 	})
 
 	t.Run("bad url internal server error", func(t *testing.T) {
