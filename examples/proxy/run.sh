@@ -34,4 +34,8 @@ ip6tables -A FORWARD -i eth1 -o eth0 -j DROP
 tcpdump -i eth0 -w proxy_eth0.pcap -U &
 tcpdump -i eth1 -w proxy_eth1.pcap -U &
 
-./proxy
+# exec replaces this shell with the proxy process, keeping the same PID, instead of running it as a child.
+# This way, signals sent to the container (e.g. SIGTERM on "docker compose stop") are delivered directly
+# to the proxy, which can close the QUIC connections gracefully. Without exec, the signal would reach
+# only the shell, and the proxy would be killed with SIGKILL after Docker's stop timeout.
+exec ./proxy

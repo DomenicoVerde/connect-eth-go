@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -23,6 +22,10 @@ import (
 	"github.com/yosida95/uritemplate/v3"
 )
 
+// logFrames enables a log line for each proxied frame. It can be disabled with LOG_FRAMES=false,
+// since logging slows down the proxying loops in high throughput tests (e.g. iperf).
+var logFrames = os.Getenv("LOG_FRAMES") != "false"
+
 func main() {
 	// get proxy IP address and port from env variables
 	proxyPort, err := strconv.Atoi(os.Getenv("PROXY_PORT"))
@@ -31,10 +34,7 @@ func main() {
 	}
 	proxyAddr := netip.AddrPortFrom(netip.MustParseAddr(os.Getenv("PROXY_ADDR")), uint16(proxyPort))
 
-	serverAddr, err := netip.ParseAddr(os.Getenv("SERVER_ADDR"))
-	if err != nil {
-		log.Fatalf("failed to parse server URL: %v", err)
-	}
+	serverAddr := getEnvAddr("SERVER_ADDR")
 
 	// store QUIC TLS secrets on file for later decryption
 	keyLog, err := os.Create("keys.txt")
@@ -58,6 +58,12 @@ func main() {
 
 	log.Printf("started tcpdump on TAP device: %s", dev.Name())
 	go proxy(ethconn, dev)
+
+	// Wait for the tunnel to be usable before running the testcase: IPv6 addresses can't be used
+	// until Duplicate Address Detection completes, and the first packets would be lost.
+	if err := waitReachable(serverAddr, 10*time.Second); err != nil {
+		log.Fatalf("server not reachable through the tunnel: %v", err)
+	}
 
 	switch os.Getenv("TESTCASE") {
 	case "ping":
@@ -113,12 +119,10 @@ func establishConn(proxyAddr netip.AddrPort, keyLog io.Writer) (*water.Interface
 
 	// Ethernet over HTTP/3 connection
 	template := uritemplate.MustNew(fmt.Sprintf("https://proxy:%d/.well-known/masque/ethernet/", proxyAddr.Port()))
-	ethconn, rsp, err := connecteth.Dial(ctx, hconn, template)
+	// Dial fails on any non-2xx response, so there is no need to check the status code here.
+	ethconn, _, err := connecteth.Dial(ctx, hconn, template)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to dial connect-ethernet proxied connection: %w", err)
-	}
-	if rsp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("unexpected status code: %d", rsp.StatusCode)
 	}
 	log.Printf("Successfully connected to a Ethernet Proxy Server: %s", proxyAddr)
 
@@ -139,24 +143,9 @@ func establishConn(proxyAddr netip.AddrPort, keyLog io.Writer) (*water.Interface
 		return nil, nil, fmt.Errorf("failed to set TAP mtu")
 	}
 
-	addr, err := netlink.ParseAddr("198.51.100.10/24")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse the IPv4 address: %w", err)
-	}
-
-	err = netlink.AddrAdd(link, addr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to add Ipv4 address to TAP interface: %w", err)
-	}
-
-	addrv6, err := netlink.ParseAddr("2001:db8:2::10/64")
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse the IPv6 address: %w", err)
-	}
-
-	err = netlink.AddrAdd(link, addrv6)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to add Ipv6 address to TAP interface: %w", err)
+	// IP addresses of the TAP device on the server network, they can be configured to run multiple clients
+	if err := addAddrs(link, getEnv("TAP_IPV4", "198.51.100.10/24"), getEnv("TAP_IPV6", "2001:db8:2::10/64")); err != nil {
+		return nil, nil, fmt.Errorf("failed to configure TAP interface: %w", err)
 	}
 
 	if err := netlink.LinkSetUp(link); err != nil {
@@ -168,17 +157,23 @@ func establishConn(proxyAddr netip.AddrPort, keyLog io.Writer) (*water.Interface
 	return dev, ethconn, nil
 }
 
+// maxFrameSize is the size of the largest Ethernet frame (without FCS) that can be proxied:
+// 1500 bytes of MTU + 14 bytes of Ethernet header + 4 bytes of IEEE 802.1Q tag.
+const maxFrameSize = 1518
+
 func proxy(ethconn *connecteth.Conn, dev *water.Interface) error {
 	errChan := make(chan error, 2)
 	go func() {
 		for {
-			b := make([]byte, 1500)
+			b := make([]byte, maxFrameSize)
 			n, err := ethconn.ReadPacket(b)
 			if err != nil {
 				errChan <- fmt.Errorf("failed to read from connection: %w", err)
 				return
 			}
-			log.Printf("Read %d bytes from connection", n)
+			if logFrames {
+				log.Printf("Read %d bytes from connection", n)
+			}
 			if _, err := dev.Write(b[:n]); err != nil {
 				errChan <- fmt.Errorf("failed to write to TUN: %w", err)
 				return
@@ -188,13 +183,15 @@ func proxy(ethconn *connecteth.Conn, dev *water.Interface) error {
 
 	go func() {
 		for {
-			b := make([]byte, 1500)
+			b := make([]byte, maxFrameSize)
 			n, err := dev.Read(b)
 			if err != nil {
 				errChan <- fmt.Errorf("failed to read from TAP: %w", err)
 				return
 			}
-			log.Printf("read %d bytes from TAP", n)
+			if logFrames {
+				log.Printf("read %d bytes from TAP", n)
+			}
 			err = ethconn.WritePacket(b[:n])
 			if err != nil {
 				errChan <- fmt.Errorf("failed to write to connection: %w", err)
@@ -209,4 +206,35 @@ func proxy(ethconn *connecteth.Conn, dev *water.Interface) error {
 	ethconn.Close()
 	<-errChan // wait for the other goroutine to finish
 	return err
+}
+
+// addAddrs adds the given IP addresses (in CIDR notation) to link.
+func addAddrs(link netlink.Link, cidrs ...string) error {
+	for _, cidr := range cidrs {
+		addr, err := netlink.ParseAddr(cidr)
+		if err != nil {
+			return fmt.Errorf("failed to parse address %s: %w", cidr, err)
+		}
+		if err := netlink.AddrAdd(link, addr); err != nil {
+			return fmt.Errorf("failed to add address %s to %s: %w", cidr, link.Attrs().Name, err)
+		}
+	}
+	return nil
+}
+
+// getEnv returns the value of the environment variable key, or def if it is not set.
+func getEnv(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+// getEnvAddr parses the IP address in the environment variable key, and exits on failure.
+func getEnvAddr(key string) netip.Addr {
+	addr, err := netip.ParseAddr(os.Getenv(key))
+	if err != nil {
+		log.Fatalf("failed to parse %s: %v", key, err)
+	}
+	return addr
 }

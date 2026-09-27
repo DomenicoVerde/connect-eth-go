@@ -11,9 +11,12 @@ services:
       - GATEWAY_IPV6=${GATEWAY_IPV6}                  # Proxy IPv6 address over server subnet (not needed)
       - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true
       - QUIC_GO_DISABLE_GSO=true
+      - LOG_FRAMES=${LOG_FRAMES:-true}                 # log each proxied frame
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun # a TAP device is bridged with the server network for each client
     expose:
       - "443/udp"
     networks:
@@ -31,6 +34,7 @@ services:
       - TESTCASE=${TESTCASE}
       - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true
       - QUIC_GO_DISABLE_GSO=true
+      - LOG_FRAMES=${LOG_FRAMES:-true}                 # log each proxied frame
       - PROXY_ADDR=${PROXY_NET_IPV4}${PROXY_NET_IPV6}
       - PROXY_PORT=443
       - SERVER_ADDR=${SERVER_NET_IPV4}${SERVER_NET_IPV6}

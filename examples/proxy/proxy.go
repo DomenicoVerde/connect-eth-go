@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -11,20 +12,33 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	connecteth "github.com/DomenicoVerde/connect-eth-go"
-	"golang.org/x/sys/unix"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 )
 
-var serverSocket int
-var ifaceLink netlink.Link
-var ifaceName = os.Getenv("SERVER_INTERFACE")
+// bridgeName is the name of the Linux bridge connecting the server-facing interface with the TAP device of each client.
+// The bridge performs MAC learning and flooding, so that each client receives only the frames destined to it,
+// as well as broadcast and multicast frames, and clients can reach each other (Sec. 7, 8.1).
+const bridgeName = "br0"
+
+// maxFrameSize is the size of the largest Ethernet frame (without FCS) that can be proxied:
+// 1500 bytes of MTU + 14 bytes of Ethernet header + 4 bytes of IEEE 802.1Q tag.
+const maxFrameSize = 1518
+
+// logFrames enables a log line for each proxied frame. It can be disabled with LOG_FRAMES=false,
+// since logging slows down the proxying loops in high throughput tests (e.g. iperf).
+var logFrames = os.Getenv("LOG_FRAMES") != "false"
+
+var bridge netlink.Link
 
 func main() {
 	// get proxy IP address and port from env variables
@@ -34,52 +48,67 @@ func main() {
 	}
 	bindProxyTo := netip.AddrPortFrom(netip.MustParseAddr(os.Getenv("PROXY_ADDR")), uint16(proxyPort))
 
-	// get Server interface name
-	link, err := netlink.LinkByName(ifaceName)
+	// bridge the server-facing interface, TAP devices of clients are added upon connection
+	ifaceName := os.Getenv("SERVER_INTERFACE")
+	br, err := createBridge(ifaceName)
 	if err != nil {
-		log.Fatalf("failed to get %s interface: %v", ifaceName, err)
+		log.Fatalf("failed to create bridge: %v", err)
 	}
-	ifaceLink = link
-
-	// create a socket to send/receive packets to/from the server
-	fd, err := createSocket(link)
-	if err != nil {
-		log.Fatalf("failed to create receive socket: %v", err)
-	}
-	serverSocket = fd
+	bridge = br
 
 	if err := run(bindProxyTo); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func createSocket(link netlink.Link) (int, error) {
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_ALL)))
+// createBridge creates a Linux bridge, and adds the interface ifaceName to it.
+func createBridge(ifaceName string) (netlink.Link, error) {
+	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
-		return 0, fmt.Errorf("creating socket: %w", err)
+		return nil, fmt.Errorf("failed to get %s interface: %w", ifaceName, err)
 	}
 
-	sll := &unix.SockaddrLinklayer{
-		Ifindex:  link.Attrs().Index,
-		Protocol: htons(unix.ETH_P_ALL),
+	// Multicast snooping is disabled, so that multicast frames (e.g. IPv6 Neighbor Discovery) are always flooded
+	// to all ports, as a plain Ethernet switch would do.
+	snooping := false
+	br := &netlink.Bridge{
+		LinkAttrs:         netlink.LinkAttrs{Name: bridgeName},
+		MulticastSnooping: &snooping,
 	}
-
-	if err := unix.Bind(fd, sll); err != nil {
-		unix.Close(fd)
-		return -1, fmt.Errorf("binding socket: %w", err)
+	if err := netlink.LinkAdd(br); err != nil {
+		return nil, fmt.Errorf("failed to add bridge %s: %w", bridgeName, err)
 	}
-
-	err = unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_IGNORE_OUTGOING, 1)
-	if err != nil {
-		unix.Close(fd)
-		return 0, fmt.Errorf("setting PACKET_IGNORE_OUTGOING: %w", err)
+	if err := netlink.LinkSetMaster(link, br); err != nil {
+		return nil, fmt.Errorf("failed to add %s to bridge %s: %w", ifaceName, bridgeName, err)
 	}
-
-	return fd, nil
+	if err := netlink.LinkSetUp(br); err != nil {
+		return nil, fmt.Errorf("failed to bring up bridge %s: %w", bridgeName, err)
+	}
+	log.Printf("created bridge %s with interface %s", bridgeName, ifaceName)
+	return br, nil
 }
 
-func htons(host uint16) uint16 {
-	return (host<<8)&0xff00 | (host>>8)&0xff
+// createTAP creates a new TAP device, and adds it to the bridge.
+// The TAP device is not persistent: it is deleted, and removed from the bridge, when it is closed.
+func createTAP() (*water.Interface, error) {
+	dev, err := water.New(water.Config{DeviceType: water.TAP})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TAP device: %w", err)
+	}
+	link, err := netlink.LinkByName(dev.Name())
+	if err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("failed to get TAP interface %s: %w", dev.Name(), err)
+	}
+	if err := netlink.LinkSetMaster(link, bridge); err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("failed to add %s to bridge %s: %w", dev.Name(), bridgeName, err)
+	}
+	if err := netlink.LinkSetUp(link); err != nil {
+		dev.Close()
+		return nil, fmt.Errorf("failed to bring up TAP interface %s: %w", dev.Name(), err)
+	}
+	return dev, nil
 }
 
 func run(bindTo netip.AddrPort) error {
@@ -135,29 +164,45 @@ func run(bindTo netip.AddrPort) error {
 		Handler:         mux,
 		EnableDatagrams: true,
 	}
-	go s.ServeListener(ln)
 	defer s.Close()
 
-	select {}
+	// Close the server on SIGINT/SIGTERM: clients are notified with a CONNECTION_CLOSE,
+	// instead of waiting for the QUIC idle timeout.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		s.Close()
+	}()
+
+	if err := s.ServeListener(ln); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func handleConn(conn *connecteth.Conn) error {
+	dev, err := createTAP()
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	log.Printf("client connected, bridged on TAP device %s", dev.Name())
+
 	errChan := make(chan error, 2)
 	go func() {
 		for {
-			b := make([]byte, 1500)
+			b := make([]byte, maxFrameSize)
 			n, err := conn.ReadPacket(b)
 			if err != nil {
 				errChan <- fmt.Errorf("failed to read from connection: %w", err)
 				return
 			}
-			log.Printf("read %d bytes from connection", n)
-			addr := &unix.SockaddrLinklayer{
-				Ifindex:  ifaceLink.Attrs().Index,
-				Protocol: htons(unix.ETH_P_ALL),
+			if logFrames {
+				log.Printf("read %d bytes from connection", n)
 			}
-			if err := unix.Sendto(serverSocket, b[:n], 0, addr); err != nil {
-				errChan <- fmt.Errorf("writing to server socket: %w", err)
+			if _, err := dev.Write(b[:n]); err != nil {
+				errChan <- fmt.Errorf("failed to write to TAP %s: %w", dev.Name(), err)
 				return
 			}
 		}
@@ -165,24 +210,26 @@ func handleConn(conn *connecteth.Conn) error {
 
 	go func() {
 		for {
-			b := make([]byte, 1500)
-			n, _, err := unix.Recvfrom(serverSocket, b, 0)
+			b := make([]byte, maxFrameSize)
+			n, err := dev.Read(b)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to read from server socket: %w", err)
+				errChan <- fmt.Errorf("failed to read from TAP %s: %w", dev.Name(), err)
 				return
 			}
-			log.Printf("read %d bytes from %s", n, ifaceName)
-			err = conn.WritePacket(b[:n])
-			if err != nil {
+			if logFrames {
+				log.Printf("read %d bytes from %s", n, dev.Name())
+			}
+			if err := conn.WritePacket(b[:n]); err != nil {
 				errChan <- fmt.Errorf("failed to write to connection: %w", err)
 				return
 			}
 		}
 	}()
 
-	err := <-errChan
+	err = <-errChan
 	log.Printf("error proxying: %v", err)
 	conn.Close()
+	dev.Close()
 	<-errChan // wait for the other goroutine to finish
 	return err
 }
