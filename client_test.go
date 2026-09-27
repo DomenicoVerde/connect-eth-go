@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -93,4 +94,51 @@ func TestClientDatagramCheck(t *testing.T) {
 		uritemplate.MustNew("https://example.org/.well-known/masque/ethernet/"),
 	)
 	require.ErrorContains(t, err, "connect-ethernet: server didn't enable datagrams")
+}
+
+func TestClientAbortOnFailedResponse(t *testing.T) {
+	aborted := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.(http.Flusher).Flush()
+		select {
+		case <-r.Context().Done():
+			close(aborted)
+		case <-time.After(time.Second):
+		}
+	})
+	s := http3.Server{
+		Handler:         mux,
+		EnableDatagrams: true,
+		TLSConfig:       tlsConf,
+	}
+	ln, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	require.NoError(t, err)
+	go func() { s.Serve(ln) }()
+	defer s.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cconn, err := quic.DialAddr(
+		ctx,
+		ln.LocalAddr().String(),
+		&tls.Config{ServerName: "localhost", RootCAs: certPool, NextProtos: []string{http3.NextProtoH3}},
+		&quic.Config{EnableDatagrams: true},
+	)
+	require.NoError(t, err)
+	defer cconn.CloseWithError(0, "")
+
+	tr := &http3.Transport{EnableDatagrams: true}
+	defer tr.Close()
+
+	_, rsp, err := Dial(ctx, tr.NewClientConn(cconn), uritemplate.MustNew("https://localhost/.well-known/masque/ethernet/"))
+	require.ErrorContains(t, err, "connect-ethernet: server responded with 403")
+	require.Equal(t, http.StatusForbidden, rsp.StatusCode)
+
+	select {
+	case <-aborted:
+	case <-time.After(time.Second):
+		t.Fatal("request stream was not aborted")
+	}
 }

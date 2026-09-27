@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yosida95/uritemplate/v3"
 )
@@ -41,6 +42,11 @@ func Dial(ctx context.Context, conn *http3.ClientConn, template *uritemplate.Tem
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect-ethernet: failed to open request stream: %w", err)
 	}
+	// Any failure after this point must abort the request (Sec. 4.1, 4.5)
+	abort := func() {
+		rstr.CancelRead(quic.StreamErrorCode(http3.ErrCodeRequestCanceled))
+		rstr.CancelWrite(quic.StreamErrorCode(http3.ErrCodeRequestCanceled))
+	}
 	if err := rstr.SendRequestHeader(&http.Request{
 		Method: http.MethodConnect,
 		Proto:  requestProtocol,
@@ -48,14 +54,17 @@ func Dial(ctx context.Context, conn *http3.ClientConn, template *uritemplate.Tem
 		Header: http.Header{http3.CapsuleProtocolHeader: []string{capsuleProtocolHeaderValue}},
 		URL:    u,
 	}); err != nil {
+		abort()
 		return nil, nil, fmt.Errorf("connect-ethernet: failed to send request: %w", err)
 	}
 
 	rsp, err := rstr.ReadResponse()
 	if err != nil {
+		abort()
 		return nil, nil, fmt.Errorf("connect-ethernet: failed to read response: %w", err)
 	}
 	if rsp.StatusCode < 200 || rsp.StatusCode > 299 {
+		abort()
 		return nil, rsp, fmt.Errorf("connect-ethernet: server responded with %d", rsp.StatusCode)
 	}
 	return newProxiedConn(rstr), rsp, nil
