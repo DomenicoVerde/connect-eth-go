@@ -1,4 +1,4 @@
-.PHONY: all build endpoints docker-build proxy pingtest
+.PHONY: all build endpoints docker-build proxy cleanup clean-containers copylogs ping pingv6 iperf iperfv6 vlan vlanv6 twoclients twoclientsv6
 
 build: proxy endpoints docker-build cleanup
 
@@ -18,13 +18,24 @@ cleanup:
 	rm proxy/key.pem proxy/cert.pem || true
 
 clean-containers:
-	docker compose rm -f client proxy server
+	docker compose --profile twoclients rm -f client client2 proxy server
 
-ping: clean-containers
-	TESTCASE=ping docker compose --env-file ipv4.env up --exit-code-from client
+# Per-frame logs slow down the proxying loops, limiting the throughput measured by iperf.
+iperf iperfv6: export LOG_FRAMES=false
 
-pingv6: clean-containers
-	TESTCASE=ping docker compose --env-file ipv6.env up --exit-code-from client
+# Testcases run by the client. The v6 variants run the same testcase over IPv6.
+ping iperf vlan: clean-containers
+	TESTCASE=$@ docker compose --env-file ipv4.env up --exit-code-from client
+
+pingv6 iperfv6 vlanv6: clean-containers
+	TESTCASE=$(@:v6=) docker compose --env-file ipv6.env up --exit-code-from client
+
+# client2 fails if it can't ping the server: in that case, all containers are stopped and the test fails.
+twoclients: clean-containers
+	TESTCASE=$@ docker compose --env-file ipv4.env --profile twoclients up --exit-code-from client
+
+twoclientsv6: clean-containers
+	TESTCASE=$(@:v6=) docker compose --env-file ipv6.env --profile twoclients up --exit-code-from client
 
 copylogs:
 	if [ -z "$(target)" ]; then echo "target directory not specified"; exit 1; fi

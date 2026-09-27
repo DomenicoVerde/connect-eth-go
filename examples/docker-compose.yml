@@ -26,8 +26,9 @@ services:
       servernet:
         ipv4_address: ${GATEWAY_IPV4}
         ipv6_address: ${GATEWAY_IPV6}
-  client:
+  client: &client
     build: client
+    image: connect-eth-client
     container_name: eth-client
     hostname: client
     environment:
@@ -38,6 +39,13 @@ services:
       - PROXY_ADDR=${PROXY_NET_IPV4}${PROXY_NET_IPV6}
       - PROXY_PORT=443
       - SERVER_ADDR=${SERVER_NET_IPV4}${SERVER_NET_IPV6}
+      - TAP_IPV4=198.51.100.10/24                      # client addresses on the server network
+      - TAP_IPV6=2001:db8:2::10/64
+      - PEER_ADDR=${CLIENT2_TAP_IPV4}${CLIENT2_TAP_IPV6} # address of client2 (twoclients test)
+      - VLAN_ID=100                                    # VLAN test
+      - VLAN_IPV4=203.0.113.10/24
+      - VLAN_IPV6=2001:db8:100::10/64
+      - VLAN_SERVER_ADDR=${SERVER_VLAN_IPV4}${SERVER_VLAN_IPV6}
     networks:
       clientnet:
         ipv4_address: ${CLIENT_NET_IPV4}
@@ -46,11 +54,36 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
+  # A second client, connected to the same proxy, started only by the twoclients test.
+  client2:
+    <<: *client
+    profiles: [twoclients]
+    container_name: eth-client2
+    hostname: client2
+    environment:
+      - TESTCASE=twoclients-peer
+      - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=true
+      - QUIC_GO_DISABLE_GSO=true
+      - LOG_FRAMES=${LOG_FRAMES:-true}                 # log each proxied frame
+      - PROXY_ADDR=${PROXY_NET_IPV4}${PROXY_NET_IPV6}
+      - PROXY_PORT=443
+      - SERVER_ADDR=${SERVER_NET_IPV4}${SERVER_NET_IPV6}
+      - TAP_IPV4=198.51.100.11/24
+      - TAP_IPV6=2001:db8:2::11/64
+    networks:
+      clientnet:
+        ipv4_address: ${CLIENT2_NET_IPV4}
+        ipv6_address: ${CLIENT2_NET_IPV6}
   server:
     build: server
     container_name: eth-server
     hostname: server
     init: true
+    environment:
+      - TESTCASE=${TESTCASE}
+      - VLAN_ID=100                                    # VLAN test
+      - VLAN_IPV4=203.0.113.3/24
+      - VLAN_IPV6=2001:db8:100::3/64
     networks:
       servernet:
         ipv4_address: ${SERVER_NET_IPV4}

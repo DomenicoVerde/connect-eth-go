@@ -20,10 +20,13 @@ Building the sources and Docker images:
 make build
 ```
 
-Running a basic ping test from the client to the server:
+Running a test (append `v6` to the target to run it over IPv6, e.g. `make pingv6`):
 ```sh
-make ping     # for IPv4
-make pingv6   # for IPv6
+make ping         # 50 pings from the client to the server
+make iperf        # TCP throughput from the client to the server, in upload and download (iperf3)
+make vlan         # ping from the client to the server on IEEE 802.1Q VLAN 100, tagged frames are
+                  # transparently forwarded through the tunnel (Section 9.2 of the draft)
+make twoclients   # two clients connected to the same proxy, pinging the server and each other
 ```
 
 Obtaining logs, keys and packet captures:

@@ -65,13 +65,28 @@ func main() {
 		log.Fatalf("server not reachable through the tunnel: %v", err)
 	}
 
-	switch os.Getenv("TESTCASE") {
+	testcase := os.Getenv("TESTCASE")
+	switch testcase {
 	case "ping":
+		err = runPingTest(serverAddr, 50)
+	case "iperf":
+		err = runIperfTest(serverAddr)
+	case "vlan":
+		err = runVLANTest(dev.Name())
+	case "twoclients":
+		err = runTwoClientsTest(serverAddr, getEnvAddr("PEER_ADDR"))
+	case "twoclients-peer":
+		// The peer client only pings the server, then keeps the tunnel open for the other client,
+		// until the containers are stopped.
 		if err := runPingTest(serverAddr, 50); err != nil {
-			log.Fatalf("ping test failed: %v", err)
+			log.Fatalf("%s test failed: %v", testcase, err)
 		}
+		select {}
 	default:
-		log.Fatalf("unknown testcase: %s", os.Getenv("TESTCASE"))
+		log.Fatalf("unknown testcase: %s", testcase)
+	}
+	if err != nil {
+		log.Fatalf("%s test failed: %v", testcase, err)
 	}
 
 	time.Sleep(time.Second) // give tcpdump some time to write the last packets
