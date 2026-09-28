@@ -55,8 +55,8 @@
     <text class="fg title" x="35" y="366">Client N</text>
     <rect class="ethbox" x="35" y="380" width="130" height="62" rx="6"/>
     <text class="fg label mono" x="100" y="399" text-anchor="middle">tap0</text>
-    <text class="muted addr mono" x="100" y="416" text-anchor="middle">198.51.100.N</text>
-    <text class="muted addr mono" x="100" y="432" text-anchor="middle">2001:db8:2::N</text>
+    <text class="muted addr mono" x="100" y="416" text-anchor="middle">198.51.100.X</text>
+    <text class="muted addr mono" x="100" y="432" text-anchor="middle">2001:db8:2::X</text>
     <rect class="h3box" x="185" y="386" width="95" height="50" rx="6"/>
     <text class="fg label" x="232" y="408" text-anchor="middle">connect-eth</text>
     <text class="muted small mono" x="232" y="426" text-anchor="middle">Dial()</text>
@@ -64,19 +64,20 @@
   </g>
 
   <!-- ===== QUIC tunnels ===== -->
-  <line class="quic" x1="280" y1="111" x2="485" y2="111"/>
-  <line class="quic" x1="280" y1="256" x2="485" y2="256"/>
-  <line class="quic dashed" x1="280" y1="411" x2="485" y2="411"/>
   <text class="fg label" x="382" y="100" text-anchor="middle">QUIC · HTTP/3</text>
   <text class="muted small" x="382" y="131" text-anchor="middle">Extended CONNECT</text>
   <text class="muted small mono" x="382" y="147" text-anchor="middle">connect-ethernet</text>
+  <text class="muted small" x="382" y="163" text-anchor="middle">Ethernet frames in</text>
+  <text class="muted small" x="382" y="179" text-anchor="middle">HTTP Datagrams</text>
   <text class="fg label" x="382" y="245" text-anchor="middle">QUIC · HTTP/3</text>
-  <text class="muted small" x="382" y="276" text-anchor="middle">Ethernet frames in</text>
-  <text class="muted small" x="382" y="292" text-anchor="middle">HTTP Datagrams</text>
   <text class="fg label" x="382" y="400" text-anchor="middle">QUIC · HTTP/3</text>
 
   <!-- ===== Proxy ===== -->
   <rect class="box" x="470" y="20" width="360" height="455" rx="10"/>
+  <!-- drawn after the proxy box so the tunnels reach its HTTP/3 layer -->
+  <line class="quic" x1="280" y1="111" x2="485" y2="111"/>
+  <line class="quic" x1="280" y1="256" x2="485" y2="256"/>
+  <line class="quic dashed" x1="280" y1="411" x2="485" y2="411"/>
   <text class="fg title" x="650" y="46" text-anchor="middle">Proxy</text>
 
   <rect class="h3box" x="485" y="60" width="110" height="400" rx="6"/>
@@ -92,7 +93,7 @@
   <text class="fg label mono" x="650" y="416" text-anchor="middle">tapN</text>
   <line class="eth" x1="595" y1="111" x2="615" y2="111"/>
   <line class="eth" x1="595" y1="256" x2="615" y2="256"/>
-  <line class="eth" x1="595" y1="411" x2="615" y2="411"/>
+  <line class="eth dashed" x1="595" y1="411" x2="615" y2="411"/>
   <text class="muted small" x="650" y="152" text-anchor="middle">one TAP</text>
   <text class="muted small" x="650" y="167" text-anchor="middle">per client</text>
 
@@ -100,7 +101,7 @@
   <text class="fg label mono" x="725" y="260" text-anchor="middle" transform="rotate(-90 725 260)">br0 (Linux bridge)</text>
   <line class="eth" x1="685" y1="111" x2="705" y2="111"/>
   <line class="eth" x1="685" y1="256" x2="705" y2="256"/>
-  <line class="eth" x1="685" y1="411" x2="705" y2="411"/>
+  <line class="eth dashed" x1="685" y1="411" x2="705" y2="411"/>
 
   <rect class="ethbox" x="765" y="236" width="80" height="40" rx="6"/>
   <text class="fg label mono" x="805" y="261" text-anchor="middle">eth1</text>
@@ -122,7 +123,7 @@
   <rect class="box dashed" x="890" y="320" width="105" height="60" rx="8"/>
   <text class="fg label" x="942" y="346" text-anchor="middle">Other</text>
   <text class="fg label" x="942" y="364" text-anchor="middle">hosts</text>
-  <line class="eth" x1="875" y1="350" x2="890" y2="350"/>
+  <line class="eth dashed" x1="875" y1="350" x2="890" y2="350"/>
 
   <!-- ===== Legend ===== -->
   <line class="quic" x1="20" y1="500" x2="60" y2="500"/>
