@@ -7,7 +7,7 @@
 
 [*connect-eth-go*](https://github.com/DomenicoVerde/connect-eth-go) is an implementation of the 
 [draft-ietf-masque-connect-ethernet](https://datatracker.ietf.org/doc/draft-ietf-masque-connect-ethernet/), 
-allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is currently updated to version 14 of the draft.
+allowing the proxying of Ethernet frames via QUIC and HTTP/3. It is currently updated to version 15 of the draft.
 
 The project is entirely based on [quic-go](https://github.com/quic-go/quic-go), and provides both a client and 
 a proxy implementation. Dockerized versions of client, proxy, and server are provided
@@ -17,19 +17,14 @@ under the [examples](examples) directory.
 
 At this point, it supports the following use cases:
 * Remote Access L2 VPN, see 
-[Section 8.1](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-14.html#section-8.1)
+[Section 8.1](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-15.html#section-8.1)
 * Site-to-Site L2 VPN, see
-[Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-14.html#section-8.2)
+[Section 8.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-15.html#section-8.2)
 
-It still does not support VLAN identifiers (VLANs are supported but not managed by the proxy). 
-It is also recommended to enable the Spanning Tree Protocol (STP) on the bridged Ethernet segments.
+VLANs are supported as well: IEEE 802.1Q tagged frames are transparently forwarded through the tunnel, see
+[Section 9.2](https://www.ietf.org/archive/id/draft-ietf-masque-connect-ethernet-15.html#section-9.2).
+To avoid loops, it is also recommended to enable the Spanning Tree Protocol (STP) on the bridged Ethernet segments.
 Check captures under the [pcaps](pcaps) directory to verify compliance with the draft.
-
-### Deviations from the draft
-
-The draft requires the proxied Ethernet frame to include the Frame Check Sequence (FCS).
-This implementation proxies frames **without the FCS**, as they are provided by TAP devices and raw sockets:
-the FCS is computed and checked by the network interface card, and it is dropped before frames reach the OS.
 
 ### Decrypting packet captures
 
